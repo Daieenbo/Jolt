@@ -5,7 +5,7 @@
 <h1 align="center">Jolt</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-74dd7c" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.0.1-74dd7c" alt="Version">
   <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Platform">
   <img src="https://img.shields.io/badge/license-MIT-74dd7c" alt="License">
   <img src="https://img.shields.io/badge/fork%20of-Voltide-6b7280" alt="Fork of Voltide">
@@ -108,7 +108,7 @@ git merge upstream/main
 ## 使用方法
 
 1. 从 [Releases](../../releases) 下载 `Jolt.exe`。
-2. 运行。程序常驻托盘，不弹窗。
+2. 运行。程序常驻托盘，不弹窗。不要把 `Jolt.exe` 放在受沙箱保护的目录里（见「已知限制」），否则托盘图标无法注册。
 3. 左键或右键点击托盘图标，打开设置卡：刷新间隔、外观、开机启动、退出应用。
 4. 鼠标悬停在托盘图标上可快速查看每台设备的连接通道与电量。
 5. Win11 下新图标默认收在任务栏的「^」溢出区，把它拖到任务栏上即可固定。
@@ -174,6 +174,7 @@ powershell -ExecutionPolicy Bypass -File pack.ps1 -Target dist
 - ZOWIE 的百分比由电压插值估算，不是设备原生读数；无线 + 底座充电时无法判断是否在充电，只有鼠标插线（切换为 `04A5:800D`）时卡片才显示「USB 已连接（推定充电）」。
 - 蓝牙 LE（HOGP）连接的 Xbox 手柄：百分比是系统读数而非四档估算，会随系统蓝牙栈刷新而跳动。GATT 没有充电标志（HID 描述符里也没有电池字段），因此充电状态只能推断：手柄接墙充时蓝牙仍保持连接，但固件会把电量固定报成 100%（实测 4 分钟内从 68% 跳到 100%），应用检测到这种跳变后显示「电池充电中」并沿用上一次真实百分比；若应用是在充电过程中启动的，没有更低的历史读数可比，首轮仍会按 100% 显示。
 - 托盘图标在浅色任务栏下没有描边（与 Windows 电源图标不完全一致），这是当前 fork 的既定样式。
+- 托盘图标依赖 Windows 外壳接口：如果 `Jolt.exe` 位于受沙箱或受管制的目录（例如 DSH 工作区 `D:\dshDesktop\DSH-WorkSpace`），从该目录启动的进程会被降为低完整性级别（Low IL），Windows 会拒绝它注册托盘图标。此时程序会弹窗说明并退出，而不是静默运行。把 exe 放到普通文件夹（例如 `D:\Jolt\`）后运行即可。
 - 单实例运行：重复双击不会弹出第二个图标，也不会把已隐藏的菜单调出来。
 
 ## 许可

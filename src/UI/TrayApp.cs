@@ -643,16 +643,21 @@ namespace Voltide.UI
                 _timer.Dispose();
             }
 
+            // Remove the shell icon before the HICON goes away. Toggling Visible or
+            // replacing Icon after the Icon object is disposed makes NotifyIcon read
+            // a dead handle, which used to surface as an ObjectDisposedException
+            // logged by the unhandled-exception hooks right as the app exits.
+            if (_tray != null)
+            {
+                try { _tray.Visible = false; } catch { }
+                try { _tray.Icon = null; } catch { }
+                try { _tray.Dispose(); } catch { }
+            }
+
             if (_trayIcon != null)
             {
                 try { _trayIcon.Dispose(); } catch { }
                 _trayIcon = null;
-            }
-
-            if (_tray != null)
-            {
-                _tray.Visible = false;
-                _tray.Dispose();
             }
 
             if (_marshal != null) _marshal.Dispose();

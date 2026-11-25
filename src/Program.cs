@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using Voltide.Core;
+using Voltide.Interop;
 using Voltide.UI;
 
 namespace Voltide
@@ -48,6 +49,23 @@ namespace Voltide
                 {
                     if (!createdNew)
                     {
+                        return;
+                    }
+
+                    // A Low-IL token cannot register a Shell_NotifyIcon: the shell denies
+                    // it and WinForms drops the failure, so the process would run with no
+                    // way to open its UI. That is what happens when Jolt.exe is started
+                    // from a sandboxed workspace folder. Say so instead of appearing dead.
+                    if (ProcessIntegrity.IsLow())
+                    {
+                        Log("Low integrity level: the shell will reject the tray icon.");
+                        MessageBox.Show(
+                            "Jolt 当前以低完整性级别(Low IL)运行，Windows 不允许这类进程显示托盘图标，所以程序无法正常工作。\n\n" +
+                            "原因：程序位于受沙箱保护的目录中（例如 D:\\dshDesktop\\DSH-WorkSpace）。从这种目录启动的程序会被降为低完整性级别。\n\n" +
+                            "解决办法：把 Jolt.exe 复制到沙箱目录之外的普通文件夹（例如 D:\\Jolt\\），再从那里运行。",
+                            "Jolt 无法显示托盘图标",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
                         return;
                     }
 
