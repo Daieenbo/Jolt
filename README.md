@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/fork%20of-Voltide-6b7280" alt="Fork of Voltide">
 </p>
 
-Jolt 是一个 Windows 托盘电量工具：把无线鼠标、键盘、耳机的电量收在任务栏里，鼠标一悬停就能看到。它是 [Voltide](https://github.com/sdparklab/Voltide) 的独立分支（fork），**设备适配层保持与上游一致，界面层是重新写的**。
+Jolt 是一个 Windows 托盘电量工具：把无线鼠标、键盘、耳机的电量收在任务栏里，鼠标一悬停就能看到。它是 [Voltide](https://github.com/sdparklab/Voltide) 的独立分支（fork），沿用上游的设备适配架构，界面层是重新写的。
 
 - 没有桌面面板，只在托盘占一个图标；左键或右键点开同一张紧凑设置卡。
 - 托盘图标按设备数量显示 1–2 枚电池，配色跟随任务栏明暗，按 DPI 原生渲染。
@@ -48,7 +48,7 @@ Jolt 是一个 Windows 托盘电量工具：把无线鼠标、键盘、耳机的
 ## 与上游 Voltide 的关系
 
 - 本项目 fork 自 [sdparklab/Voltide](https://github.com/sdparklab/Voltide)，基线为上游 v2.1.5（`c1872c4`）。
-- 设备适配（`src/Providers`、`src/Interop`、`src/Core`）以及设备列表、协议说明都来自上游，**不在此 fork 内改动**，因此上游新增设备的提交可以直接合并进来。
+- 设备适配（`src/Providers`、`src/Interop`、`src/Core`）最初来自上游。Jolt 也接受贡献者在自己设备上验证过的适配 PR。
 - 界面层（`src/UI`、`src/Program.cs`、托盘交互、DPI、构建脚本）是 fork 自己的实现，与上游差异较大，所以**不向上游提交 Pull Request**，作为独立分支维护。
 
 同步上游设备支持：
@@ -59,7 +59,15 @@ git fetch upstream
 git merge upstream/main
 ```
 
-预期冲突只会出现在 `README.md`（两份文案）与 `build.ps1`（产物名），设备适配文件不会冲突。
+同步时请核对两边对同一型号的改动，避免重复注册适配器。
+
+## 用自己的设备贡献适配
+
+手边有一台设备就可以参与。先在 GitHub 上 fork 本仓库，在连接设备的 Windows 电脑上克隆自己的 fork，用能操作本地终端的编程 agent 打开仓库根目录，把下面这段话发给它，填入型号和当前连接方式即可。
+
+> 请按 `docs/device-adaptation-prompt.md` 为我手边的【品牌和完整型号】适配电量读取。现在用【2.4G 接收器 / 蓝牙 / USB 有线】连接。需要我唤醒设备、切换连接或查看厂商软件读数时告诉我。验证通过后，请把改动推送到我的 fork，并向 `Daieenbo/Jolt` 的 `main` 分支提交 PR，返回链接。
+
+如果 agent 无法直接读取仓库文件，可以复制[完整适配提示词](docs/device-adaptation-prompt.md)发给它。提交 PR 时需使用有权推送个人 fork 的 GitHub 账号。
 
 ## 当前已支持
 
