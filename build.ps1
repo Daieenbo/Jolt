@@ -48,8 +48,8 @@ if ($bleOpts.Count -eq 0) {
     Write-Host 'WinRT metadata not found: building without the BLE battery path.'
 }
 
-$gui  = Join-Path $root 'Voltide.exe'
-$test = Join-Path $root 'Voltide-Test.exe'
+$gui  = Join-Path $root 'Jolt.exe'
+$test = Join-Path $root 'Jolt-Test.exe'
 $ico  = Join-Path $root 'app.ico'
 
 # The icon is generated from the logo geometry by tools\makeicon.ps1; if it is

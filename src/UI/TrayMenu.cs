@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
@@ -8,120 +7,96 @@ using System.Windows.Forms;
 
 namespace Voltide.UI
 {
-    internal enum MenuRowKind
-    {
-        Level,      // name + bar + percentage
-        Asleep,     // name + grey bar + 休眠中
-        Autostart,  // 开机启动 with a toggle
-        Quit        // 退出应用
-    }
-
-    internal class MenuRow
-    {
-        public string Name;
-        public string Value;
-        public int? Percent;
-        public bool GreyValue;   // sleeping row: last level shown dimmed
-        public MenuRowKind Kind;
-    }
-
     /// <summary>
-    /// The tray menu, built strictly to the layered artboards:
-    ///
-    ///   header   270 x 19   (top corners only)
-    ///   gap        9
-    ///   row      270 x 30   (top and bottom hairline)
-    ///   gap        9
-    ///   ...
-    ///   bottom gap 9
-    ///
-    /// so a one-device menu is 19 + 9 + 30 + 9 + 30 + 9 = 106 tall, and every extra
-    /// device adds 39.
+    /// The tray menu, rebuilt as a compact settings card. It now owns everything that
+    /// used to live in the desktop panel: refresh cadence, appearance (with a system
+    /// option) plus the two actions, with the actions sharing the bottom line so the
+    /// popup stays smaller than the old two-row menu. Device levels deliberately stay
+    /// out — they are on the tray icon and in the hover card.
     /// </summary>
     internal class MenuPanel : Control
     {
-        private const float W = 270f;
-        private const float HeaderH = 19f;
+        private const float W = 216f;
+        private const float PadX = 12f;
+        private const float HeaderH = 26f;
         private const float RowH = 30f;
-        private const float Gap = 9f;
-        private const float Corner = 8f;
+        private const float BottomRowH = 30f;
+        private const float BottomPad = 4f;
+        private const float Corner = 10f;
 
-        private const float TextX = 26.22f;
-        private const float ValueX = 199.87f;
-        private const float RuleLeft = 26.81f;
-        private const float RuleRight = 200.06f;
-        private const float RuleW = 0.75f;
+        private const float ChipH = 22f;
+        private const float ChipGap = 5f;
+        private const float ChipPadX = 7f;
 
-        private const float BarX = 131.11f;
-        private const float BarY = 12.03f;
-        private const float BarW = 57.51f;
-        private const float BarH = 5.95f;
+        private const float TrackW = 32f;
+        private const float TrackH = 16f;
+        private const float KnobR = 6f;
 
-        private const float LevelBaseline = 21.95f;   // rows with a percentage
-        private const float CjkBaseline = 20.42f;     // 休眠中 / 退出应用
+        // Bottom line: action label left, a hairline, then quit. The split keeps both
+        // targets at least ~80 px wide even at 100 % DPI.
+        private const float SplitX = 122f;
 
-        private static readonly Color Bg = Color.FromArgb(15, 15, 15);
-        private static readonly Color Rule = Color.FromArgb(30, 30, 30);
-        private static readonly Color NameCol = Color.FromArgb(229, 203, 179);
-        private static readonly Color Muted = Color.FromArgb(135, 135, 135);
-        private static readonly Color Soft = Color.FromArgb(204, 204, 204);
-        private static readonly Color Accent = Color.FromArgb(116, 221, 124);
-        private static readonly Color BarBack = Color.FromArgb(79, 79, 79);
+        private static readonly int[] RefreshOptions = { 15, 30, 90 };
+        private static readonly ThemeMode[] ThemeOptions =
+            { ThemeMode.Dark, ThemeMode.Light, ThemeMode.System };
 
-        private static readonly float[] GradPos = { 0f, 0.21f, 0.42f, 0.64f, 0.86f, 1f };
-        private static readonly Color[] GradCol = new Color[]
-        {
-            Color.FromArgb(64, 58, 132),
-            Color.FromArgb(61, 56, 127),
-            Color.FromArgb(55, 50, 115),
-            Color.FromArgb(45, 41, 94),
-            Color.FromArgb(32, 29, 65),
-            Color.FromArgb(21, 19, 43)
-        };
-
-        private readonly List<MenuRow> _rows;
         private readonly float _scale;
 
-        private readonly Font _nameFont;
-        private readonly Font _valueFont;
-        private readonly Font _cnFont;
         private readonly Font _markFont;
+        private readonly Font _labelFont;
+        private readonly Font _chipFont;
+        private readonly Font _chipLatin;
 
-        private readonly float[] _hover;
-        private System.Windows.Forms.Timer _anim;
+        private readonly float[] _refreshChipW = new float[3];
+        private readonly float[] _themeChipW = new float[3];
+
         private int _hot = -1;
+        private int _hotChip = -1;
+
+        private int _refreshSeconds = 90;
+        private ThemeMode _theme = ThemeMode.System;
+        private bool _autostartOn;
+        private bool _autostartEnabled = true;
 
         public event EventHandler QuitRequested;
         public event EventHandler AutostartToggled;
+        public event EventHandler RefreshSecondsChanged;
+        public event EventHandler ThemeChanged;
 
-        private bool _autostartOn;
-        private float _switchT;                                  // 0 = off, 1 = on (animated)
-        private System.Windows.Forms.Timer _switchAnim;
-        private bool _autostartEnabled = true;
+        public int RefreshSeconds
+        {
+            get { return _refreshSeconds; }
+            set { _refreshSeconds = value; Invalidate(); }
+        }
+
+        public ThemeMode Theme
+        {
+            get { return _theme; }
+            set { _theme = value; Invalidate(); }
+        }
 
         /// <summary>Current switch position, read back by the host when it saves.</summary>
         public bool AutostartOn
         {
             get { return _autostartOn; }
-            set { _autostartOn = value; _switchT = value ? 1f : 0f; }
+            set { _autostartOn = value; Invalidate(); }
         }
 
-        /// <summary>False when the process is not a real Voltide.exe (in-memory dev build),
+        /// <summary>False when the process is not a real Jolt.exe (in-memory dev build),
         /// where writing a Run entry would point at powershell.exe instead.</summary>
-        public bool AutostartEnabled { get { return _autostartEnabled; } set { _autostartEnabled = value; } }
-
-        public int LineCount { get { return _rows.Count + 2; } }   // + autostart + quit
-
-        public MenuPanel(List<MenuRow> rows, float scale,
-                         Font nameFont, Font valueFont, Font cnFont, Font markFont)
+        public bool AutostartEnabled
         {
-            _rows = rows;
-            _scale = scale;
-            _nameFont = nameFont;
-            _valueFont = valueFont;
-            _cnFont = cnFont;
-            _markFont = markFont;
-            _hover = new float[rows.Count + 2];
+            get { return _autostartEnabled; }
+            set { _autostartEnabled = value; Invalidate(); }
+        }
+
+        public MenuPanel(float scale)
+        {
+            _scale = scale > 0f ? scale : 1f;
+            _markFont = FontManager.Get(FontKind.MontserratSemiBold, 10f * _scale);
+            _labelFont = FontManager.Get(FontKind.Chinese, 12.5f * _scale);
+            _chipFont = FontManager.Get(FontKind.Chinese, 11f * _scale);
+            _chipLatin = FontManager.Get(FontKind.MontserratMedium, 11f * _scale);
 
             SetStyle(ControlStyles.OptimizedDoubleBuffer
                      | ControlStyles.AllPaintingInWmPaint
@@ -129,53 +104,116 @@ namespace Voltide.UI
             SetStyle(ControlStyles.Selectable, false);
 
             Margin = Padding.Empty;
-            Size = new Size((int)Math.Round(W * scale), (int)Math.Round(TotalHeight() * scale));
-            BackColor = Bg;
+            Size = new Size((int)Math.Round(W * _scale),
+                            (int)Math.Round(TotalHeight() * _scale));
+            BackColor = FluentTheme.P.BgTop;
+
+            MeasureChips();
         }
 
-        /// <summary>19 + 9 + n*39.</summary>
-        public float TotalHeight()
+        private void MeasureChips()
         {
-            return HeaderH + Gap + LineCount * (RowH + Gap);
+            using (Bitmap bmp = new Bitmap(1, 1))
+            using (Graphics g = Graphics.FromImage(bmp))
+            using (StringFormat sf = Typo())
+            {
+                for (int i = 0; i < RefreshOptions.Length; i++)
+                {
+                    _refreshChipW[i] = g.MeasureString(RefreshOptions[i] + "s", _chipLatin, 400, sf).Width
+                                       + ChipPadX * 2f * _scale;
+                }
+
+                for (int i = 0; i < ThemeOptions.Length; i++)
+                {
+                    _themeChipW[i] = g.MeasureString(ThemeManager.NameOf(ThemeOptions[i]),
+                                                     _chipFont, 400, sf).Width
+                                     + ChipPadX * 2f * _scale;
+                }
+            }
         }
 
-        public int ScaledCorner { get { return (int)Math.Round(Corner * _scale); } }
+        private static StringFormat Typo()
+        {
+            StringFormat sf = new StringFormat(StringFormat.GenericTypographic);
+            sf.FormatFlags |= StringFormatFlags.NoWrap;
+            return sf;
+        }
+
+        private static float TotalHeight()
+        {
+            return HeaderH + RowH * 2f + BottomRowH + BottomPad;
+        }
 
         private float RowTop(int index)
         {
-            return HeaderH + Gap + index * (RowH + Gap);
+            if (index < 2) return HeaderH + index * RowH;
+            return HeaderH + RowH * 2f;
         }
+
+        private float RowHeight(int index)
+        {
+            return (index < 2) ? RowH : BottomRowH;
+        }
+
+        private float RowTopPx(int index) { return RowTop(index) * _scale; }
+
+        public int ScaledCorner { get { return (int)Math.Round(Corner * _scale); } }
 
         // --------------------------------------------------------------- input
 
         private int RowAt(int y)
         {
-            for (int i = 0; i < LineCount; i++)
+            for (int i = 0; i < 3; i++)
             {
-                float top = RowTop(i) * _scale;
-                float bottom = top + RowH * _scale;
-                if (y >= top && y < bottom) return i;
+                float top = RowTopPx(i);
+                if (y >= top && y < top + RowHeight(i) * _scale) return i;
             }
+            return -1;
+        }
+
+        private int ChipAt(int x, int row)
+        {
+            if (row != 0 && row != 1) return -1;
+
+            float[] widths = row == 0 ? _refreshChipW : _themeChipW;
+            float total = ChipGap * _scale * (widths.Length - 1);
+            foreach (float w in widths) total += w;
+
+            float left = Width - PadX * _scale - total;
+            if (x < left) return -1;
+
+            float cursor = left;
+            for (int i = 0; i < widths.Length; i++)
+            {
+                if (x >= cursor && x < cursor + widths[i]) return i;
+                cursor += widths[i] + ChipGap * _scale;
+            }
+
             return -1;
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            int hit = RowAt(e.Y);
-            if (hit != _hot)
+            int row = RowAt(e.Y);
+            int chip = ChipAt(e.X, row);
+
+            if (row != _hot || chip != _hotChip)
             {
-                _hot = hit;
-                Cursor = (hit >= _rows.Count && hit <= _rows.Count + 1) ? Cursors.Hand : Cursors.Default;
-                StartAnim();
+                _hot = row;
+                _hotChip = chip;
+                Cursor = row >= 0 ? Cursors.Hand : Cursors.Default;
+                Invalidate();
             }
+
             base.OnMouseMove(e);
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
             _hot = -1;
+            _hotChip = -1;
             Cursor = Cursors.Default;
-            StartAnim();
+            Invalidate();
             base.OnMouseLeave(e);
         }
 
@@ -183,54 +221,50 @@ namespace Voltide.UI
         {
             if (e.Button != MouseButtons.Left) { base.OnMouseClick(e); return; }
 
-            int hit = RowAt(e.Y);
+            int row = RowAt(e.Y);
+            int chip = ChipAt(e.X, row);
 
-            if (hit == _rows.Count && _autostartEnabled)
+            if (row == 0 && chip >= 0)
             {
-                // Autostart row: flip the switch and let the host write the Run entry.
-                _autostartOn = !_autostartOn;
-                StartSwitchAnim();
-                if (AutostartToggled != null) AutostartToggled(this, EventArgs.Empty);
+                int seconds = RefreshOptions[chip];
+                if (seconds != _refreshSeconds)
+                {
+                    _refreshSeconds = seconds;
+                    Invalidate();
+                    if (RefreshSecondsChanged != null) RefreshSecondsChanged(this, EventArgs.Empty);
+                }
             }
-            else if (hit == _rows.Count + 1)
+            else if (row == 1 && chip >= 0)
             {
-                if (QuitRequested != null) QuitRequested(this, EventArgs.Empty);
+                ThemeMode mode = ThemeOptions[chip];
+                if (mode != _theme)
+                {
+                    _theme = mode;
+                    ThemeManager.Set(mode);
+                    Invalidate();
+                    if (ThemeChanged != null) ThemeChanged(this, EventArgs.Empty);
+                }
+            }
+            else if (row == 2)
+            {
+                bool inAutostart = e.X < SplitX * _scale;
+
+                if (inAutostart)
+                {
+                    if (_autostartEnabled)
+                    {
+                        _autostartOn = !_autostartOn;
+                        Invalidate();
+                        if (AutostartToggled != null) AutostartToggled(this, EventArgs.Empty);
+                    }
+                }
+                else if (QuitRequested != null)
+                {
+                    QuitRequested(this, EventArgs.Empty);
+                }
             }
 
             base.OnMouseClick(e);
-        }
-
-        private void StartAnim()
-        {
-            if (_anim == null)
-            {
-                _anim = new System.Windows.Forms.Timer();
-                _anim.Interval = 16;
-                _anim.Tick += delegate
-                {
-                    bool moving = false;
-
-                    for (int i = 0; i < _hover.Length; i++)
-                    {
-                        float target = (i == _hot) ? 1f : 0f;
-                        float delta = target - _hover[i];
-
-                        if (Math.Abs(delta) < 0.01f)
-                        {
-                            _hover[i] = target;
-                            continue;
-                        }
-
-                        _hover[i] += delta * 0.35f;
-                        moving = true;
-                    }
-
-                    Invalidate();
-                    if (!moving) _anim.Stop();
-                };
-            }
-
-            if (!_anim.Enabled) _anim.Start();
         }
 
         // -------------------------------------------------------------- paint
@@ -242,358 +276,228 @@ namespace Voltide.UI
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
             float s = _scale;
+            FluentTheme.Palette p = FluentTheme.P;
 
-            using (SolidBrush bg = new SolidBrush(Bg))
-            using (GraphicsPath body = Round(new RectangleF(0f, 0f, Width, Height), Corner * s))
+            using (GraphicsPath body = FluentTheme.Round(new RectangleF(0f, 0f, Width, Height), Corner * s))
+            using (LinearGradientBrush bg = new LinearGradientBrush(
+                new Rectangle(0, 0, Width, Height), p.BgTop, p.BgBottom, LinearGradientMode.Vertical))
             {
                 g.FillPath(bg, body);
             }
 
-            DrawHeader(g, s);
-            DrawRules(g, s);
-
-            for (int i = 0; i < LineCount; i++)
+            using (Pen pen = new Pen(p.Border, Math.Max(1f, s)))
+            using (GraphicsPath outline = FluentTheme.Round(
+                new RectangleF(0f, 0f, Width - 1f, Height - 1f), Corner * s))
             {
-                DrawRow(g, s, i);
+                pen.Alignment = PenAlignment.Inset;
+                g.DrawPath(pen, outline);
+            }
+
+            DrawHeader(g, s, p);
+            DrawTextRow(g, s, p, 0, "刷新间隔");
+            DrawTextRow(g, s, p, 1, "外观");
+            DrawBottomRow(g, s, p);
+            DrawChips(g, s, p, 0, _refreshChipW, false);
+            DrawChips(g, s, p, 1, _themeChipW, true);
+        }
+
+        private void DrawHeader(Graphics g, float s, FluentTheme.Palette p)
+        {
+            using (SolidBrush brush = new SolidBrush(p.Sub))
+            using (StringFormat sf = Typo())
+            {
+                float baseline = 18f * s;
+                g.DrawString("JOLT", _markFont, brush, PadX * s,
+                             baseline - FontManager.Ascent(_markFont), sf);
+            }
+
+            using (SolidBrush line = new SolidBrush(p.Hair))
+            {
+                g.FillRectangle(line, PadX * s, HeaderH * s,
+                                Width - PadX * 2f * s, Math.Max(1f, s));
             }
         }
 
-        private void DrawHeader(Graphics g, float s)
+        /// <summary>Label row; also paints the hover wash for rows that can be clicked.</summary>
+        private void DrawTextRow(Graphics g, float s, FluentTheme.Palette p, int index, string label)
         {
-            float h = HeaderH * s;
-            float r = Corner * s;
+            float top = RowTopPx(index);
+            float h = RowHeight(index) * s;
 
-            // Only the top corners are rounded; the bottom edge meets the panel body.
-            using (GraphicsPath path = new GraphicsPath())
+            if (_hot == index)
             {
-                path.AddArc(0f, 0f, r * 2f, r * 2f, 180f, 90f);
-                path.AddArc(Width - r * 2f, 0f, r * 2f, r * 2f, 270f, 90f);
-                path.AddLine(Width, h, 0f, h);
-                path.CloseFigure();
-
-                using (LinearGradientBrush grad = new LinearGradientBrush(
-                    new RectangleF(0f, 0f, Width, h),
-                    GradCol[0], GradCol[GradCol.Length - 1], LinearGradientMode.Horizontal))
+                using (SolidBrush wash = new SolidBrush(p.Wash))
                 {
-                    ColorBlend blend = new ColorBlend();
-                    blend.Positions = GradPos;
-                    blend.Colors = GradCol;
-                    grad.InterpolationColors = blend;
-
-                    g.FillPath(grad, path);
+                    g.FillRectangle(wash, 5f * s, top + 2f * s, Width - 10f * s, h - 4f * s);
                 }
             }
 
-            using (SolidBrush brush = new SolidBrush(Soft))
-            using (StringFormat sf = new StringFormat(StringFormat.GenericTypographic))
+            using (SolidBrush brush = new SolidBrush(p.Ink))
+            using (StringFormat sf = Typo())
             {
-                sf.FormatFlags |= StringFormatFlags.NoWrap;
-                float baseline = 13.22f * s;
-                g.DrawString("VOLTIDE", _markFont, brush,
-                             ValueX * s, baseline - FontManager.Ascent(_markFont), sf);
+                float y = top + (h - _labelFont.GetHeight(g)) / 2f;
+                g.DrawString(label, _labelFont, brush, PadX * s, y, sf);
             }
         }
 
-        private void DrawRules(Graphics g, float s)
+        private void DrawBottomRow(Graphics g, float s, FluentTheme.Palette p)
         {
-            float top = (HeaderH - 0.15f) * s;
-            float bottom = Height - 1f * s;
-            float w = Math.Max(1f, RuleW * s);
+            float top = RowTopPx(2);
+            float h = BottomRowH * s;
 
-            using (SolidBrush brush = new SolidBrush(Rule))
+            if (_hot == 2)
             {
-                g.FillRectangle(brush, RuleLeft * s, top, w, bottom - top);
-                g.FillRectangle(brush, RuleRight * s, top, w, bottom - top);
-            }
-        }
-
-        private void DrawRow(Graphics g, float s, int index)
-        {
-            float top = RowTop(index) * s;
-            float h = RowH * s;
-
-            // Row order: devices..., autostart, quit.
-            bool isAutostart = index == _rows.Count;
-            bool isQuit = index == _rows.Count + 1;
-            MenuRow row = (isQuit || isAutostart) ? null : _rows[index];
-
-            // hover wash, kept faint so the grid stays intact
-            float hover = _hover[index];
-            if (hover > 0.01f)
-            {
-                int alpha = (int)(16f * hover);
-                using (SolidBrush wash = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
+                using (SolidBrush wash = new SolidBrush(p.Wash))
                 {
-                    g.FillRectangle(wash, 0f, top, Width, h);
+                    g.FillRectangle(wash, 5f * s, top + 2f * s, Width - 10f * s, h - 4f * s);
                 }
             }
 
-            int lift = (int)(20f * hover);
+            float cx = SplitX * s;
 
-            // hairlines at the top and bottom of the row
-            using (SolidBrush line = new SolidBrush(Rule))
+            using (SolidBrush line = new SolidBrush(p.Hair))
             {
-                float lw = Math.Max(1f, RuleW * s);
-                g.FillRectangle(line, 0f, top, Width, lw);
-                g.FillRectangle(line, 0f, top + h - lw, Width, lw);
+                g.FillRectangle(line, cx, top + 6f * s, Math.Max(1f, s), h - 12f * s);
             }
 
-            using (StringFormat sf = new StringFormat(StringFormat.GenericTypographic))
+            using (SolidBrush brush = new SolidBrush(_autostartEnabled ? p.Ink : p.Sub))
+            using (StringFormat sf = Typo())
             {
-                sf.FormatFlags |= StringFormatFlags.NoWrap;
-
-                if (isQuit)
-                {
-                    using (SolidBrush brush = new SolidBrush(Lift(Soft, lift)))
-                    {
-                        g.DrawString("退出应用", _cnFont, brush, TextX * s,
-                                     top + CjkBaseline * s - FontManager.Ascent(_cnFont), sf);
-                    }
-                    return;
-                }
-
-                if (isAutostart)
-                {
-                    // Label dims slightly when the host cannot write a Run entry
-                    // (dev build running under powershell.exe).
-                    Color label = _autostartEnabled ? Soft : Color.FromArgb(110, 110, 110);
-                    using (SolidBrush brush = new SolidBrush(Lift(label, lift)))
-                    {
-                        g.DrawString("开机启动", _cnFont, brush, TextX * s,
-                                     top + CjkBaseline * s - FontManager.Ascent(_cnFont), sf);
-                    }
-
-                    DrawSwitch(g, s, top, lift);
-                    return;
-                }
-
-                Color nameColor = row.Kind == MenuRowKind.Asleep ? Muted : NameCol;
-                Font nameFont = FitName(g, row.Name, (BarX - TextX - 4f) * s);
-                using (SolidBrush brush = new SolidBrush(Lift(nameColor, lift)))
-                {
-                    g.DrawString(row.Name, nameFont, brush, TextX * s,
-                                 top + LevelBaseline * s - FontManager.Ascent(nameFont), sf);
-                }
-
-                // Numeric values always use the Latin face, including the remembered
-                // level on a sleeping row — otherwise "48%" came out in 汉仪旗黑 and
-                // did not match the same digits above it. Only Chinese words belong
-                // to the CJK face.
-                bool numeric = row.Kind == MenuRowKind.Level
-                               || (row.GreyValue && row.Percent.HasValue);
-
-                if (numeric)
-                {
-                    using (SolidBrush brush = new SolidBrush(Lift(Tone(row), lift)))
-                    {
-                        g.DrawString(row.Value, _valueFont, brush, ValueX * s,
-                                     top + LevelBaseline * s - FontManager.Ascent(_valueFont), sf);
-                    }
-                }
-                else
-                {
-                    using (SolidBrush brush = new SolidBrush(Lift(Muted, lift)))
-                    {
-                        g.DrawString(row.Value, _cnFont, brush, ValueX * s,
-                                     top + CjkBaseline * s - FontManager.Ascent(_cnFont), sf);
-                    }
-                }
+                float y = top + (h - _labelFont.GetHeight(g)) / 2f;
+                g.DrawString("开机启动", _labelFont, brush, PadX * s, y, sf);
             }
 
-            float barX = BarX * s;
-            float barY = top + BarY * s;
-            float barW = BarW * s;
-            float barH = BarH * s;
-            float radius = barH / 2f;
+            float switchX = cx - 10f * s - TrackW * s;
+            DrawSwitch(g, s, p, switchX, top + (h - TrackH * s) / 2f);
 
-            using (GraphicsPath back = Round(new RectangleF(barX, barY, barW, barH), radius))
-            using (SolidBrush backBrush = new SolidBrush(BarBack))
+            // Draw the quit label with the plain point overload and centre it by hand.
+            // The rectangle overload with a centred StringFormat silently produced no
+            // text here, while every other label painted fine.
+            using (StringFormat sf = Typo())
             {
-                g.FillPath(backBrush, back);
-            }
+                const string quit = "退出应用";
+                float rightLeft = cx + 4f * s;
+                float rightW = Width - PadX * s - rightLeft;
+                float textW = g.MeasureString(quit, _labelFont, 400, sf).Width;
+                float tx = rightLeft + (rightW - textW) / 2f;
+                if (tx < rightLeft) tx = rightLeft;
+                float y = top + (h - _labelFont.GetHeight(g)) / 2f;
 
-            if (row.Kind == MenuRowKind.Level && row.Percent.HasValue)
-            {
-                float fill = Math.Max(barH, barW * (row.Percent.Value / 100f));
-                using (GraphicsPath front = Round(new RectangleF(barX, barY, fill, barH), radius))
-                using (SolidBrush fillBrush = new SolidBrush(Lift(Tone(row), lift)))
+                using (SolidBrush brush = new SolidBrush(p.Ink))
                 {
-                    g.FillPath(fillBrush, front);
+                    g.DrawString(quit, _labelFont, brush, tx, y, sf);
                 }
             }
         }
 
-        /// <summary>
-        /// Drives the pill: knob slides and the track cross-fades grey -> green over
-        /// ~150 ms. Eased, not linear, so the knob settles instead of stopping dead.
-        /// </summary>
-        private void StartSwitchAnim()
+        private void DrawChips(Graphics g, float s, FluentTheme.Palette p, int row,
+                               float[] widths, bool themeRow)
         {
-            if (_switchAnim == null)
+            int selected = themeRow ? ThemeIndex() : RefreshIndex();
+
+            float total = ChipGap * s * (widths.Length - 1);
+            foreach (float w in widths) total += w;
+
+            float x = Width - PadX * s - total;
+            float y = RowTopPx(row) + (RowH * s - ChipH * s) / 2f;
+            float h = ChipH * s;
+
+            Font font = themeRow ? _chipFont : _chipLatin;
+
+            using (StringFormat sf = Typo())
             {
-                _switchAnim = new System.Windows.Forms.Timer();
-                _switchAnim.Interval = 16;
-                _switchAnim.Tick += delegate
+                sf.Alignment = StringAlignment.Center;
+                sf.LineAlignment = StringAlignment.Center;
+
+                for (int i = 0; i < widths.Length; i++)
                 {
-                    float target = _autostartOn ? 1f : 0f;
-                    float delta = target - _switchT;
+                    RectangleF rect = new RectangleF(x, y, widths[i], h);
+                    bool on = i == selected;
 
-                    if (Math.Abs(delta) < 0.02f)
+                    using (GraphicsPath chip = FluentTheme.Round(rect, 5f * s))
                     {
-                        _switchT = target;
-                        _switchAnim.Stop();
-                    }
-                    else
-                    {
-                        _switchT += delta * 0.32f;
+                        if (on)
+                        {
+                            using (SolidBrush fill = new SolidBrush(p.Ink)) g.FillPath(fill, chip);
+                        }
+                        else
+                        {
+                            using (Pen pen = new Pen(p.Border, Math.Max(1f, s)))
+                            {
+                                pen.Alignment = PenAlignment.Inset;
+                                g.DrawPath(pen, chip);
+                            }
+                        }
                     }
 
-                    Invalidate();
-                };
+                    string text = themeRow
+                        ? ThemeManager.NameOf(ThemeOptions[i])
+                        : RefreshOptions[i] + "s";
+
+                    using (SolidBrush brush = new SolidBrush(on ? p.BgTop : p.Ink))
+                    {
+                        g.DrawString(text, font, brush, rect, sf);
+                    }
+
+                    x += widths[i] + ChipGap * s;
+                }
             }
-
-            if (!_switchAnim.Enabled) _switchAnim.Start();
         }
 
-        /// <summary>
-        /// The autostart pill: 28.7 x 9.02 with r=4.51, knob 4.51 at cy 15.
-        /// Off keeps the same geometry with a grey track and the knob on the left.
-        /// </summary>
-        private void DrawSwitch(Graphics g, float s, float rowTop, int lift)
+        private int RefreshIndex()
         {
-            const float TrackX = 210.81f;
-            const float TrackY = 10.49f;
-            const float TrackW = 28.7f;
-            const float TrackH = 9.02f;
-            const float KnobR = 4.51f;
-            const float KnobOnX = 235.01f;
-            const float KnobOffX = TrackX + KnobR;
+            for (int i = 0; i < RefreshOptions.Length; i++)
+            {
+                if (RefreshOptions[i] == _refreshSeconds) return i;
+            }
+            return 2;
+        }
 
-            float x = TrackX * s;
-            float y = rowTop + TrackY * s;
+        private int ThemeIndex()
+        {
+            for (int i = 0; i < ThemeOptions.Length; i++)
+            {
+                if (ThemeOptions[i] == _theme) return i;
+            }
+            return 2;
+        }
+
+        private void DrawSwitch(Graphics g, float s, FluentTheme.Palette p, float x, float y)
+        {
             float w = TrackW * s;
             float h = TrackH * s;
-            float radius = TrackH * s / 2f;
+            float radius = h / 2f;
 
-            // Ease the raw progress so the knob decelerates into place.
-            float t = _switchT;
-            float eased = 1f - (1f - t) * (1f - t);
+            Color track = !_autostartEnabled
+                ? Color.FromArgb(40, p.Sub)
+                : (_autostartOn ? p.AccentGreen : Color.FromArgb(90, p.Sub));
 
-            Color track;
-            if (!_autostartEnabled) track = Color.FromArgb(58, 58, 58);
-            else track = Mix(BarBack, Lift(Accent, lift), eased);
-
-            using (GraphicsPath path = Round(new RectangleF(x, y, w, h), radius))
+            using (GraphicsPath path = FluentTheme.Round(new RectangleF(x, y, w, h), radius))
             using (SolidBrush brush = new SolidBrush(track))
             {
                 g.FillPath(brush, path);
             }
 
             float knobR = KnobR * s;
-            float cx = (KnobOffX + (KnobOnX - KnobOffX) * eased) * s;
+            float leftX = x + knobR + 2f * s;
+            float rightX = x + w - knobR - 2f * s;
+            float cx = _autostartOn ? rightX : leftX;
             float cy = y + h / 2f;
-            Color knobColor = _autostartEnabled ? Color.White : Color.FromArgb(140, 140, 140);
 
-            using (SolidBrush knob = new SolidBrush(knobColor))
+            using (SolidBrush knob = new SolidBrush(_autostartEnabled ? Color.White : Color.FromArgb(180, 180, 180)))
             {
                 g.FillEllipse(knob, cx - knobR, cy - knobR, knobR * 2f, knobR * 2f);
             }
         }
-
-        private static Color Mix(Color a, Color b, float t)
-        {
-            return Color.FromArgb(
-                (int)(a.R + (b.R - a.R) * t),
-                (int)(a.G + (b.G - a.G) * t),
-                (int)(a.B + (b.B - a.B) * t));
-        }
-
-        /// <summary>
-        /// Names sit between the left rule and the progress bar. A long one shrinks
-        /// rather than sliding under the bar, and CJK names switch to the Chinese face.
-        /// </summary>
-        private Font FitName(Graphics g, string text, float avail)
-        {
-            bool cjk = CardRenderer.HasCjk(text);
-            FontKind kind = cjk ? FontKind.Chinese : FontKind.MontserratMedium;
-
-            float px = 20f * _scale;
-            Font font = FontManager.Get(kind, px);
-            if (string.IsNullOrEmpty(text)) return font;
-
-            float width;
-            using (StringFormat sf = cjk
-                       ? new StringFormat()
-                       : new StringFormat(StringFormat.GenericTypographic))
-            {
-                width = g.MeasureString(text, font, int.MaxValue, sf).Width;
-            }
-
-            if (width > avail && width > 0f)
-            {
-                font = FontManager.Get(kind, Math.Max(13f * _scale, px * (avail / width)));
-            }
-
-            return font;
-        }
-
-        // ------------------------------------------------------------ helpers
-
-        private static GraphicsPath Round(RectangleF r, float radius)
-        {
-            GraphicsPath p = new GraphicsPath();
-            float d = radius * 2f;
-
-            if (d <= 0f)
-            {
-                p.AddRectangle(r);
-                return p;
-            }
-
-            p.AddArc(r.Left, r.Top, d, d, 180f, 90f);
-            p.AddArc(r.Right - d, r.Top, d, d, 270f, 90f);
-            p.AddArc(r.Right - d, r.Bottom - d, d, d, 0f, 90f);
-            p.AddArc(r.Left, r.Bottom - d, d, d, 90f, 90f);
-            p.CloseFigure();
-
-            return p;
-        }
-
-        /// <summary>Menu percentages follow the same green/amber/red tiers as the cards.</summary>
-        private static Color Tone(MenuRow row)
-        {
-            if (row == null) return Accent;
-            if (row.GreyValue) return Muted;
-            return row.Percent.HasValue ? CardRenderer.PrimaryFor(row.Percent.Value) : Accent;
-        }
-
-        private static Color Lift(Color c, int amount)
-        {
-            return Color.FromArgb(
-                Math.Min(255, c.R + amount),
-                Math.Min(255, c.G + amount),
-                Math.Min(255, c.B + amount));
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing && _anim != null)
-            {
-                _anim.Stop();
-                _anim.Dispose();
-                _anim = null;
-            }
-            base.Dispose(disposing);
-        }
     }
 
     /// <summary>
-    /// Borderless popup that hosts the panel.
+    /// Borderless popup that hosts the compact settings card.
     ///
     /// A ContextMenuStrip was the obvious host but it lays its items out with its own
-    /// padding (left the dark strip down two edges) and, when shown manually, did not
-    /// always close on an outside click. Owning the window fixes both: exact client
-    /// size, no system chrome, and Deactivate does the dismissing.
+    /// padding and, when shown manually, did not always close on an outside click.
+    /// Owning the window fixes both: exact client size, no system chrome, and
+    /// Deactivate does the dismissing.
     /// </summary>
     internal class TrayMenuForm : Form
     {
@@ -612,7 +516,10 @@ namespace Voltide.UI
             ShowInTaskbar = false;
             TopMost = true;
             DoubleBuffered = true;
-            BackColor = Color.FromArgb(15, 15, 15);
+            // Every dimension in here is computed from our own DPI-derived scale, so
+            // let WinForms stay out of it; automatic scaling would apply it twice.
+            AutoScaleMode = AutoScaleMode.None;
+            BackColor = FluentTheme.P.BgTop;
             Padding = Padding.Empty;
         }
 
@@ -644,8 +551,6 @@ namespace Voltide.UI
             }
 
             // Ignore the Deactivate that fires from the click that opened us.
-            // Reused rather than recreated per show: a popup dismissed inside 150 ms
-            // used to leave its timer running until the first tick.
             _armed = false;
 
             if (_armTimer == null)

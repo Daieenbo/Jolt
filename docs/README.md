@@ -1,21 +1,14 @@
-# Screenshots
+# 截图
 
-Drop the following files here so `README.md` renders correctly.
+README 引用的图片都在这里。
 
-| File | What it should show | Suggested size |
+| 文件 | 内容 | 尺寸 |
 |---|---|---|
-| `panel.png` | The panel with two or three devices, at least one asleep | 1412 × 860 (150% scaling) |
-| `tray-menu.png` | The tray context menu, one row hovered | 270 × N, as captured |
-| `empty.png` | The empty state with the designer credit | 1412 × 860 |
+| `menu.png` | 浅色设置卡（左键或右键托盘图标打开） | 432 × 240 |
+| `menu-dark.png` | 深色设置卡 | 432 × 240 |
+| `tray-icons.png` | 托盘电池图标：16 / 20 / 24 / 32 px（放大两倍展示），上排浅色任务栏、下排深色任务栏 | 520 × 220 |
+| `icon.png` | 应用图标 | 256 × 256 |
 
-Take them with the panel open and real hardware attached. Do not scale them up;
-the interface is drawn at native resolution and looks best unmodified.
-
-Recommended capture method:
-
-```powershell
-# Panel
-powershell -ExecutionPolicy Bypass -File tools\shot.ps1
-```
-
-The tray menu has to be captured manually — Win+Shift+S, then crop to the popup.
+设置卡与托盘图标都由 `src/UI` 中的绘制代码生成：`MenuPanel` 以 2 倍缩放直接渲染出设置卡，
+`IconFactory.RenderTray(size, levels, light)` 渲染出各尺寸的电池图标。校对截图时用同一套绘制
+代码重新生成，不要用放大工具重采样：界面本身按原生分辨率绘制。

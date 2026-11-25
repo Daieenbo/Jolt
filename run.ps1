@@ -1,4 +1,4 @@
-# Runs Voltide without producing an .exe on disk.
+# Runs Jolt without producing an .exe on disk.
 #
 # Why: this machine has Windows 11 Smart App Control in enforcement mode.
 # It blocks every unsigned executable, and the account is not an administrator,
@@ -60,7 +60,7 @@ try
     # so the project must run from its own root no matter where it was launched from.
     [System.IO.Directory]::SetCurrentDirectory($root)
 
-    [Voltide.Program]::Run(@('--show'))
+    [Voltide.Program]::Run(@())
 }
 catch
 {

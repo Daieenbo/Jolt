@@ -1,41 +1,59 @@
-<p align="center">
-  <img src="docs/icon.png" width="112" alt="Voltide">
-</p>
+# Jolt
 
-<h1 align="center">Voltide</h1>
+<img src="docs/icon.png" width="112" alt="Jolt">
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.1.5-74dd7c" alt="Version">
-  <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-000000?logo=windows&logoColor=white" alt="Platform">
-  <img src="https://img.shields.io/badge/.NET%20Framework-4.8-512BD4" alt=".NET">
-  <img src="https://img.shields.io/badge/size-8.3%20MB-74dd7c" alt="Size">
+  <img src="https://img.shields.io/badge/version-1.0.0-74dd7c" alt="Version">
+  <img src="https://img.shields.io/badge/platform-Windows-0078d4" alt="Platform">
   <img src="https://img.shields.io/badge/license-MIT-74dd7c" alt="License">
+  <img src="https://img.shields.io/badge/fork%20of-Voltide-6b7280" alt="Fork of Voltide">
 </p>
 
-一款轻量的 Windows 托盘工具，在一块面板中显示 2.4G 无线外设（键盘与鼠标）的电量，无需安装任何厂商软件。
+Jolt 是一个 Windows 托盘电量工具：把无线鼠标、键盘、耳机的电量收在任务栏里，鼠标一悬停就能看到。它是 [Voltide](https://github.com/sdparklab/Voltide) 的独立分支（fork），**设备适配层保持与上游一致，界面层是重新写的**。
 
-目前已内置罗技、迈丛、ROG 三家适配器。这是作者手头拥有的设备，而非工具的能力边界：适配层被设计成「支持一个新品牌 = 新增一个独立的类」。
+- 没有桌面面板，只在托盘占一个图标；左键或右键点开同一张紧凑设置卡。
+- 托盘图标按设备数量显示 1–2 枚电池，配色跟随任务栏明暗，按 DPI 原生渲染。
+- 悬停即看电量，不必打开设置卡。
 
-![Voltide 面板](docs/panel.png)
+## 截图
 
-*三台设备：89% 放电中、47% 中等电量，以及一台休眠设备保留着最后一次读数。*
+![托盘设置卡](docs/menu.png)
 
-![Voltide 四台设备](docs/panel-4-devices.png)
+*左键或右键点击托盘图标，打开的就是这张设置卡：刷新间隔、外观、开机启动、退出应用。*
 
-*四台设备——超过三台时，卡片行可用鼠标滚轮横向翻阅。*
+![托盘图标](docs/tray-icons.png)
 
-若你使用的设备尚未被支持，可以通过 Issue 提出。作者也欢迎借用设备进行实测，并据此补充对应型号的适配。
+*托盘电池图标：16 / 20 / 24 / 32 px（图中放大两倍）。上排为浅色任务栏，下排为深色任务栏。*
+
+![深色设置卡](docs/menu-dark.png)
+
+*外观选「深色」，或选「跟随系统」且系统为深色时，同一张卡片改用中性灰配色。*
 
 ## 功能
 
-- **一块面板容纳全部设备。** 卡片自动排布并居中；设备接入即出现。超过三台时，卡片行可用鼠标滚轮横向翻阅。
-- **液面指示。** 闪电随电量注满，面板打开时有缓慢的波动。
-- **三档配色。** 50% 及以上为绿色，20% 至 49% 为黄色，20% 以下为红色。百分比与液面同步变色。
-- **准确的休眠状态。** 曾经上报过的设备在休眠时保留最后一次读数并变暗——一台睡着的鼠标仍然能提供信息。
-- **可调刷新间隔。** 面板打开时可选 15 秒、30 秒或 90 秒，设置会被保存并在下次启动时恢复。
-- **托盘集成。** 左键打开面板，右键菜单列出每台设备及其当前电量。
-- **开机自启。** 可选，在托盘菜单中切换。
-- **单文件发布。** 8.3 MB，无安装程序，除 Windows 自带的 .NET Framework 外无其他依赖。
+- **常驻托盘，不弹窗口。** 程序只在托盘占一个图标，没有桌面面板；左键或右键点开的是同一张设置卡。
+- **Windows 风格的托盘电池图标。** 图标按设备数量显示 1–2 枚电池，竖向堆叠，形态对齐系统电源图标：浅色任务栏为灰底槽 + 黑色电量条、无描边；深色任务栏为白色描边 + 绿色电量条。配色跟随**任务栏**明暗（而不是应用主题），没有设备时回退为应用图标。
+- **按 DPI 原生渲染。** 以 Per-Monitor V2 声明 DPI 感知，按任务栏所在显示器的 DPI 重新绘制（100% / 125% / 150% 下分别是 16 / 20 / 24 px，最高 32 px），缩放变化或任务栏移到另一块显示器时会重画，不会被系统拉糊。
+- **悬浮查看电量。** 鼠标停在托盘图标上弹出浮层，按行列出设备名、连接通道（2.4G / 有线 / 蓝牙）与电量；休眠设备保留最后一次读数并灰显。浮层电池条 15% 及以下为红色，30% 及以下为黄色，其余为绿色。
+- **右键设置。** 刷新间隔（`15s / 30s / 90s`）、外观（深色 / 浅色 / 跟随系统）、开机启动与退出应用，全部收在同一张紧凑卡片里，选择会被记住。
+- **浅色与深色共用一套 fluent 语言。** 浅色为米白卡片，深色为中性灰卡片，字色与分隔线同步调整；「跟随系统」会在 Windows 切换主题时实时跟随。
+- **单文件发布。** 无安装程序，除 Windows 自带的 .NET Framework 外无其他依赖。
+
+## 与上游 Voltide 的关系
+
+- 本项目 fork 自 [sdparklab/Voltide](https://github.com/sdparklab/Voltide)，基线为上游 v2.1.5（`c1872c4`）。
+- 设备适配（`src/Providers`、`src/Interop`、`src/Core`）以及设备列表、协议说明都来自上游，**不在此 fork 内改动**，因此上游新增设备的提交可以直接合并进来。
+- 界面层（`src/UI`、`src/Program.cs`、托盘交互、DPI、构建脚本）是 fork 自己的实现，与上游差异较大，所以**不向上游提交 Pull Request**，作为独立分支维护。
+
+同步上游设备支持：
+
+```powershell
+git remote add upstream https://github.com/sdparklab/Voltide.git   # 只需一次
+git fetch upstream
+git merge upstream/main
+```
+
+预期冲突只会出现在 `README.md`（两份文案）与 `build.ps1`（产物名），设备适配文件不会冲突。
 
 ## 当前已支持
 
@@ -70,7 +88,7 @@
 | Sony | INZONE H5（耳机） | `054C:0EBF` | 64 字节 HCI，0xFF04 |
 | Xbox | Series X\|S、8BitDo 等 XInput 手柄 | 槽位 0–3 | 四档电量（蓝牙 LE 为 GATT 精确值） |
 
-> 本轮新增设备的适配由以下网友在真实硬件上逆向并验证：
+> 上游与 fork 新增设备的适配由以下网友在真实硬件上逆向并验证：
 > [@RealRayTan](https://github.com/RealRayTan)（PS5）、
 > [@Yim-7](https://github.com/Yim-7)（XIBERIA T7、CROCIRIS X7）、
 > [@CLR0512](https://github.com/CLR0512)（VXE R1）、
@@ -82,80 +100,52 @@
 > [@znc15](https://github.com/znc15)（ROG Omni 键鼠分离）、
 > [@WeiqiaoCode](https://github.com/WeiqiaoCode)（刷新间隔崩溃修复）。
 >
-> 一并致谢的早期贡献者：[yiwluoq](https://github.com/yiwluoq)（ATK）、[Mor16rty](https://github.com/Mor16rty)（IMECOO、Xbox）、[whitzard0421](https://github.com/whitzard0421)（K7 V2 Ultra+）、[koobzx](https://github.com/koobzx)（A5 V3）、[ptaritsu](https://github.com/ptaritsu)（TAIDU）、[Cantrarella](https://github.com/Cantrarella)（ROG Delta II / Pelta），以及 B 站网友 木兮丶念旧（雷蛇与狼蛛协议）。
-> 感谢 [@yiwluoq](https://github.com/yiwluoq)（ATK）、[@Mor16rty](https://github.com/Mor16rty)（IMECOO、Xbox）、
-> [@whitzard0421](https://github.com/whitzard0421)（K7 V2 Ultra+）、[@koobzx](https://github.com/koobzx)（A5 V3）、
-> [@ptaritsu](https://github.com/ptaritsu)（TAIDU）、[@Cantrarella](https://github.com/Cantrarella)（ROG Delta II / Pelta）
-> 在真实硬件上逆向并验证各自的设备，特此致谢。
->
+> 一并致谢的早期贡献者：[yiwluoq](https://github.com/yiwluoq)（ATK）、[Mor16rty](https://github.com/Mor16rty)（IMECOO、Xbox）、[whitzard0421](https://github.com/whitzard0421)（K7 V2 Ultra+）、[koobzx](https://github.com/koobzx)（A5 V3）、[ptaritsu](https://github.com/ptaritsu)（TAIDU）、[Cantrarella](https://github.com/Cantrarella)（ROG Delta II / Pelta）。
 > 雷蛇与狼蛛协议的逆向由 B 站网友 木兮丶念旧 完成并分享，一并致谢。
-
-### 如何添加新设备
-
-若你的设备不在列表中，可以在不触碰界面的前提下完成扩展。每个品牌都是一个自包含的适配器：
-
-```csharp
-public interface IDeviceProvider
-{
-    string Name { get; }
-    List<DeviceInfo> Discover(List<HidDeviceInfo> catalog);   // catalog 由 DeviceManager 统一枚举
-    DeviceReading Read(DeviceInfo device); // 发送查询，解析回复
-}
-```
-
-添加步骤：
-
-1. 新建 `src/Providers/YourBrandProvider.cs`，实现 `IDeviceProvider`。
-2. 在 `src/Core/DeviceManager.cs` 中与现有适配器一并注册。
-3. 重新编译。
-
-`Discover()` 会收到系统暴露的全部 HID 集合；`src/Interop/HidNative.cs` 提供枚举能力，`HidSession` 负责读写。现有五个适配器是复杂度递进的可参考样例，具体帧格式见[协议说明](#协议说明)。
-
-若厂商协议未公开，可以通过抓包还原：运行官方工具，用 [USBPcap](https://desowin.org/usbpcap/) 记录 USB 流量，定位返回百分比的那一次请求。三个现有适配器都是这样写成的。
-
-**欢迎为新增设备提交 Pull Request。** 请附上型号名称与承载电量的原始回复报文，以便核对。
 
 ## 使用方法
 
-1. 从 [Releases](../../releases) 下载 `Voltide.exe`。
-2. 运行。面板会打开一次，之后常驻托盘。
-3. 左键点击托盘图标打开面板，右键查看设备列表。
+1. 从 [Releases](../../releases) 下载 `Jolt.exe`。
+2. 运行。程序常驻托盘，不弹窗。
+3. 左键或右键点击托盘图标，打开设置卡：刷新间隔、外观、开机启动、退出应用。
+4. 鼠标悬停在托盘图标上可快速查看每台设备的连接通道与电量。
+5. Win11 下新图标默认收在任务栏的「^」溢出区，把它拖到任务栏上即可固定。
 
 无需安装、无后台服务、无需管理员权限。
 
-![托盘菜单](docs/tray-menu.png)
-
-*托盘菜单列出每台设备及其当前电量，并提供刷新间隔与开机自启开关。*
-
-### 如何理解面板
+### 如何理解悬停浮层
 
 | 显示状态 | 含义 |
 |---|---|
-| 彩色百分比 + 已填充的闪电 | 设备在线并正常上报 |
-| 灰色百分比 + 空的闪电 | 设备休眠；所示数值为最后一次读数 |
-| `--` 与「设备休眠中」 | 设备处于空闲状态，且从未上报过 |
+| 已填充的电池条 + 彩色百分比 | 设备在线并正常上报 |
+| 空心电池条 + 灰色「休眠」 | 设备休眠；若曾上报过，数值为最后一次读数 |
+| 空心电池条 + `--` | 设备处于休眠，且从未上报过 |
 
 ### 设置
 
-- **刷新间隔** —— 面板底部的三个选项（`15s / 30s / 90s`），默认 90 秒。面板隐藏到托盘后，刷新放慢至 5 分钟。
-- **开机自启** —— 托盘菜单中的开关。写入当前用户的启动项，无需提权。
+- **刷新间隔** —— 设置卡里的三个选项（`15s / 30s / 90s`），默认 90 秒，选择会被保存并在下次启动时恢复。
+- **外观** —— `深色` / `浅色` / `跟随系统`；写入当前用户注册表（`HKCU\Software\Jolt`），「跟随系统」实时跟随 Windows 主题。托盘图标的明暗只跟随任务栏，不受这里影响。
+- **开机自启** —— 同一张卡片里的开关，写入当前用户的启动项（`HKCU\...\Run` 下的 `Jolt`），无需提权。
 
 ## 系统要求
 
 - Windows 10 1903 或更高版本，或 Windows 11
 - .NET Framework 4.8（上述系统已内置）
+- 高 DPI：按 Per-Monitor V2 声明 DPI 感知；Windows 10 1607 以前会退回系统级 DPI 感知
 
 ## 构建
 
 ```powershell
-# 编译（使用 Windows 自带的 C# 编译器）
+# 编译（使用 Windows 自带的 C# 编译器，产出 Jolt.exe / Jolt-Test.exe）
 powershell -ExecutionPolicy Bypass -File build.ps1
 
-# 生成可分发的单文件版本
+# 生成可分发的单文件版本（默认输出到 dist\）
 powershell -ExecutionPolicy Bypass -File pack.ps1 -Target dist
 ```
 
-三款字体以清单资源的形式嵌入可执行文件，因此产物为单个文件。
+- `Jolt-Test.exe --test` 会在控制台打印当前枚举到的设备与原始报文，便于新增适配时核对。
+- 若仓库内存在 `Fonts/` 目录，`build.ps1` 会把字体作为清单资源嵌入 exe；当前仓库不含字体文件，未嵌入时回退到系统字体。
+- `run.cmd` / `run.ps1` 用 `Add-Type` 把源码编译到内存直接运行，不落盘 exe，适合开发时试跑；但它无法引用 WinRT 元数据，因此**不含蓝牙 LE（Xbox 手柄）路径**，正式版本请用 `build.ps1` 或 `pack.ps1`。
 
 ## 协议说明
 
@@ -166,8 +156,9 @@ powershell -ExecutionPolicy Bypass -File pack.ps1 -Target dist
 - **ROG** —— 向接收器的厂商集合（用途页 `0xFF00`）写入 64 字节帧 `02 12 01`。回复的第 6 字节为百分比，第 10 字节为设备上配置的低电量阈值。
 - **ZOWIE** —— 向接收器的厂商集合（用途页 `0xFF03`）写入 16 字节帧 `08 B4 15`，回复来自用途页 `0xFF04` 的 16 字节输入报告，第 1–2 字节为大端电压（单位 0.01 V）。协议没有原生百分比与充电位；百分比按鼠标 LED 档位对应的电压锚点插值，属于估算。另用 `B4 40` / `B4 25` 读取接收器与鼠标固件版本，靠命令前后版本是否一致判断鼠标是否真的在线——鼠标关机后接收器仍会返回旧电压。
 - **Sony** —— INZONE 耳机走 Sony HCI（opcode `0xFC00`），封装在用途页 `0xFF04` 的 64 字节报告中。电池事件 `0x04`，回复载荷第 1 字节为充电标志，第 2 字节为百分比。
+- **Xbox（蓝牙 LE）** —— 手柄以 HOGP 连接时，XInput 返回 `type 0` 看不到电池，于是改读蓝牙 GATT 电池服务（`0x180F` / `0x2A19`）。GATT 只给百分比、没有充电标志，充电状态靠「15 分钟内从 ≤95% 跳到 100%」推断。
 
-有一处值得记录的陷阱：罗技 `0x1004` 的**功能 0** 返回的是电压而非电量——设备空闲时它恒定为 3.85 V，与真实电量无关。返回百分比的是功能 1（`0x1E`）。早期版本读取功能 0，这正是 Voltide 显示的数值与 G HUB 不一致的原因。
+有一处值得记录的陷阱：罗技 `0x1004` 的**功能 0** 返回的是电压而非电量——设备空闲时它恒定为 3.85 V，与真实电量无关。返回百分比的是功能 1（`0x1E`）。早期版本读取功能 0，这正是 Voltide 显示数值与 G HUB 不一致的原因。
 
 ## 已知限制
 
@@ -176,13 +167,16 @@ powershell -ExecutionPolicy Bypass -File pack.ps1 -Target dist
 - 共享同一接收器的无线设备通过接收器上报，而非各自独立上报。
 - 同品牌但不同型号的设备会被识别为现有型号。适配层目前按厂商与接口特征匹配，尚未区分具体型号。
 - 迈丛与狼蛛共用 USB 标识（`3554:FA09`）。目前仅适配迈丛的查询协议，狼蛛键盘可能被识别为迈丛型号，读数也可能不正确。两者需要通过监听设备主动上报来区分，尚未实现。
-- XInput 手柄只能读到**四档**电量（满 100% / 中 50% / 低 20% / 空 5%），不是精确百分比。卡片详情会标注 `XInput 四档`，避免误读为实测值。
+- XInput 手柄在**有线或非蓝牙**通道下只能读到**四档**电量（满 100% / 中 50% / 低 20% / 空 5%），不是精确百分比，浮层会标注 `XInput 四档`，避免误读为实测值。
 - Sony INZONE 耳机关机后不再应答，卡片转为休眠并保留最后一次读数。
 - ZOWIE 的百分比由电压插值估算，不是设备原生读数；无线 + 底座充电时无法判断是否在充电，只有鼠标插线（切换为 `04A5:800D`）时卡片才显示「USB 已连接（推定充电）」。
-- 蓝牙 LE（HOGP）连接的 Xbox 手柄，XInput 回 `type 0`、看不到电池。本适配改读蓝牙 GATT 电池服务（`0x180F` / `0x2A19`），卡片详情标 `蓝牙 · 系统电量`，百分比是系统读数而非四档估算。GATT 只有百分比、没有充电标志（HID 描述符里也没有电池字段），因此充电状态只能靠推断：手柄接墙充时蓝牙仍保持连接，但固件会把电量固定报成 100%（实测 4 分钟内从 68% 跳到 100%），应用检测到这种跳变后显示「电池充电中」并沿用上一次真实百分比；若应用是在充电过程中启动的，没有更低的历史读数可比，首轮仍会按 100% 显示。该读数由系统蓝牙栈缓存刷新，可能比实际电量跳动。
+- 蓝牙 LE（HOGP）连接的 Xbox 手柄：百分比是系统读数而非四档估算，会随系统蓝牙栈刷新而跳动。GATT 没有充电标志（HID 描述符里也没有电池字段），因此充电状态只能推断：手柄接墙充时蓝牙仍保持连接，但固件会把电量固定报成 100%（实测 4 分钟内从 68% 跳到 100%），应用检测到这种跳变后显示「电池充电中」并沿用上一次真实百分比；若应用是在充电过程中启动的，没有更低的历史读数可比，首轮仍会按 100% 显示。
+- 托盘图标在浅色任务栏下没有描边（与 Windows 电源图标不完全一致），这是当前 fork 的既定样式。
+- 单实例运行：重复双击不会弹出第二个图标，也不会把已隐藏的菜单调出来。
 
 ## 许可
 
 MIT，详见 [LICENSE](LICENSE)。
 
-设计与开发：[Joko](https://github.com/sdparklab)。
+原始设计与设备协议逆向：[Joko](https://github.com/sdparklab) / [Voltide](https://github.com/sdparklab/Voltide)。
+fork 维护：Daieenbo。

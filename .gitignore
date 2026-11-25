@@ -9,7 +9,7 @@ dist/
 Fonts/
 
 # Runtime artefacts
-Voltide-error.txt
+Jolt-error.txt
 *.pcap
 *.log
 

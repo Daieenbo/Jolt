@@ -1,16 +1,16 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-// Shown in Explorer: right-click Voltide.exe -> Properties -> Details.
-[assembly: AssemblyTitle("Voltide")]
-[assembly: AssemblyDescription("Wireless peripheral battery monitor — designed by Joko")]
+// Shown in Explorer: right-click Jolt.exe -> Properties -> Details.
+[assembly: AssemblyTitle("Jolt")]
+[assembly: AssemblyDescription("Wireless peripheral battery monitor — fork of Voltide, original design by Joko")]
 [assembly: AssemblyCompany("Joko")]
-[assembly: AssemblyProduct("Voltide")]
-[assembly: AssemblyCopyright("© 2026 Joko")]
+[assembly: AssemblyProduct("Jolt")]
+[assembly: AssemblyCopyright("© 2026 Joko; fork modifications by Daieenbo")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
-[assembly: AssemblyVersion("2.1.5.0")]
-[assembly: AssemblyFileVersion("2.1.5.0")]
+[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyFileVersion("1.0.0.0")]
 
 [assembly: ComVisible(false)]

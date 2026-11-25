@@ -14,7 +14,7 @@ namespace Voltide.UI
     /// whatever Windows decides to substitute.
     ///
     /// The release build embeds all three TTFs as manifest resources, so a single
-    /// Voltide.exe carries its own typography. File lookup stays as the fallback for
+    /// Jolt.exe carries its own typography. File lookup stays as the fallback for
     /// the in-memory build (run.cmd), which has no embedded resources.
     /// </summary>
     public static class FontManager
