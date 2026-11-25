@@ -1,6 +1,8 @@
-# Jolt
+<p align="center">
+  <img src="docs/icon.png" width="112" alt="Jolt">
+</p>
 
-<img src="docs/icon.png" width="112" alt="Jolt">
+<h1 align="center">Jolt</h1>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-74dd7c" alt="Version">
@@ -17,17 +19,17 @@ Jolt 是一个 Windows 托盘电量工具：把无线鼠标、键盘、耳机的
 
 ## 截图
 
-![托盘设置卡](docs/menu.png)
+<p align="center"><img src="docs/menu.png" width="432" alt="托盘设置卡"></p>
 
-*左键或右键点击托盘图标，打开的就是这张设置卡：刷新间隔、外观、开机启动、退出应用。*
+<p align="center"><em>左键或右键点击托盘图标，打开的就是这张设置卡：刷新间隔、外观、开机启动、退出应用。</em></p>
 
-![托盘图标](docs/tray-icons.png)
+<p align="center"><img src="docs/tray-icons.png" width="520" alt="托盘电池图标"></p>
 
-*托盘电池图标：16 / 20 / 24 / 32 px（图中放大两倍）。上排为浅色任务栏，下排为深色任务栏。*
+<p align="center"><em>托盘电池图标：16 / 20 / 24 / 32 px（图中放大两倍）。上排为浅色任务栏，下排为深色任务栏。</em></p>
 
-![深色设置卡](docs/menu-dark.png)
+<p align="center"><img src="docs/menu-dark.png" width="432" alt="深色设置卡"></p>
 
-*外观选「深色」，或选「跟随系统」且系统为深色时，同一张卡片改用中性灰配色。*
+<p align="center"><em>外观选「深色」，或选「跟随系统」且系统为深色时，同一张卡片改用中性灰配色。</em></p>
 
 ## 功能
 
