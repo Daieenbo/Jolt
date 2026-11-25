@@ -5,10 +5,16 @@ using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 using Voltide.Core;
 
 namespace Voltide.UI
 {
+    /// <summary>
+    /// The tray process: a NotifyIcon, the compact settings menu and the hover card.
+    /// There is no desktop window any more — the tray icon is the whole UI surface,
+    /// so a left click and a right click both open the same menu.
+    /// </summary>
     public class TrayApp : IDisposable
     {
         [DllImport("user32.dll")]
@@ -16,63 +22,90 @@ namespace Voltide.UI
 
         private readonly DeviceManager _manager;
         private readonly NotifyIcon _tray;
-        private readonly MainForm _form;
         private readonly System.Windows.Forms.Timer _timer;
+
+        // The only window in the process. It is never shown; it exists so worker
+        // thread results can be marshalled back onto the UI thread.
+        private readonly Control _marshal;
 
         private bool _refreshing;
         private bool _refreshQueued;
 
-        // A second right-click replaces the popup instead of stacking another copy.
+        // A second click replaces the popup instead of stacking another copy.
         private TrayMenuForm _menuForm;
 
+        // Tray face: one or two battery glyphs that mirror the current levels.
+        private Icon _trayIcon;
+        private List<DeviceSnapshot> _snapshot = new List<DeviceSnapshot>();
 
-        internal static readonly Color MenuMuted = Color.FromArgb(135, 135, 135); // card status line
+        // Last real percentage per device, so a sleeping mouse keeps its tray slot
+        // and its last known level instead of reading as an empty battery.
+        private readonly Dictionary<string, int> _lastPercent = new Dictionary<string, int>();
+
+        private int _refreshSeconds;
+
+        // Cached from the taskbar window: the tray slot and both popups scale from it.
+        private int _dpi = 96;
+        private float _dpiScale = 1f;
+
+        // Hover card. The delay keeps it from flashing while the pointer merely
+        // travels across the taskbar on its way somewhere else.
+        private FluentTipForm _tip;
+        private readonly System.Windows.Forms.Timer _hoverDelay;
+        private readonly System.Windows.Forms.Timer _tipPoll;
+        private Point _tipAnchor;
 
         public TrayApp()
         {
             _manager = new DeviceManager();
 
-            _form = new MainForm(_manager);
-            _form.FormClosing += delegate(object s, FormClosingEventArgs e)
-            {
-                if (e.CloseReason == CloseReason.UserClosing)
-                {
-                    e.Cancel = true;
-                    _form.Hide();
-                }
-            };
-            _form.RefreshRequested += delegate { RefreshNow(); };
+            _marshal = new Control();
+            _marshal.CreateControl();
 
-            // force handle creation so cross-thread marshalling works immediately
-            IntPtr handle = _form.Handle;
+            RefreshDpi();
 
             _tray = new NotifyIcon();
-            _tray.Icon = IconFactory.ToIcon(32);
-            _tray.Text = "Voltide";   // Windows tooltip on hover
+            _tray.Icon = IconFactory.ToIcon(Dpi.SmallIconSize(_dpi));
+            // No shell tooltip: the level list is drawn by FluentTipForm instead, so
+            // there is nothing useful for the single-line system tooltip to say.
+            _tray.Text = "";
             _tray.Visible = true;
+
+            _hoverDelay = new System.Windows.Forms.Timer();
+            _hoverDelay.Interval = 320;
+            _hoverDelay.Tick += delegate { _hoverDelay.Stop(); ShowTip(); };
+
+            _tipPoll = new System.Windows.Forms.Timer();
+            _tipPoll.Interval = 150;
+            _tipPoll.Tick += PollTip;
+
+            _tray.MouseMove += delegate
+            {
+                if (_tipPoll.Enabled) return;
+                _tipAnchor = Cursor.Position;
+                if (!_hoverDelay.Enabled) _hoverDelay.Start();
+            };
 
             _tray.MouseUp += delegate(object s, MouseEventArgs e)
             {
-                if (e.Button == MouseButtons.Left) { _form.ShowPanel(); return; }
-                ShowMenuAboveRight();
+                HideTip();
+                ShowMenu();
             };
 
-            _form.RefreshSeconds = LoadRefreshSeconds();
-            _form.RefreshRateChanged += delegate
-            {
-                SaveRefreshSeconds(_form.RefreshSeconds);
-                ApplyInterval();
-            };
+            ThemeManager.Changed += OnThemeChanged;
+            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+
+            _refreshSeconds = LoadRefreshSeconds();
 
             _timer = new System.Windows.Forms.Timer();
-            _timer.Interval = _form.RefreshSeconds * 1000;
+            _timer.Interval = _refreshSeconds * 1000;
             _timer.Tick += delegate
             {
                 // Keep the footprint small: the receiver shares its input pipe with
                 // G HUB, and every request we send is broadcast to it too. It also
                 // stops answering for a while if it is polled too hard, which showed
                 // up as cards flapping between "97%" and "asleep".
-                ApplyInterval();
                 RefreshNow();
             };
             _timer.Start();
@@ -81,18 +114,18 @@ namespace Voltide.UI
         }
 
         /// <summary>
-        /// The panel's own cadence while it is open; a slow trickle while hidden in the
-        /// tray so a sleeping mouse is not woken every 15 seconds for nothing.
+        /// The cadence the user picked in the menu. No hidden-vs-visible split any
+        /// more: with no panel there is nothing to slow down for.
         /// </summary>
         private void ApplyInterval()
         {
-            int seconds = _form.Visible ? _form.RefreshSeconds : 300;
-            if (_timer.Interval != seconds * 1000) _timer.Interval = seconds * 1000;
+            int ms = _refreshSeconds * 1000;
+            if (_timer.Interval != ms) _timer.Interval = ms;
         }
 
         // ------------------------------------------------------- refresh rate
 
-        private const string SettingsKey = @"Software\Voltide";
+        private const string SettingsKey = @"Software\Jolt";
 
         private static int LoadRefreshSeconds()
         {
@@ -111,7 +144,7 @@ namespace Voltide.UI
             }
             catch
             {
-                return 30;
+                return 90;
             }
         }
 
@@ -130,40 +163,68 @@ namespace Voltide.UI
             }
         }
 
+        // ---------------------------------------------------------------- menu
+
         /// <summary>
-        /// Opens the popup to the upper-right of the cursor, in a borderless window of
-        /// our own so the size, the corners and the dismissal are all under our control.
+        /// Opens the menu above the cursor, in a borderless window of our own so the
+        /// size, the corners and the dismissal are all under our control.
         /// </summary>
-        private void ShowMenuAboveRight()
+        private void ShowMenu()
         {
-            // One popup at a time. Without this, each right-click built a new window
-            // and the old one stayed alive until it lost focus — repeated clicks piled
-            // up as a stack of menus.
+            HideTip();
+            SyncDpi();
+
+            // One popup at a time. Without this, each click built a new window and the
+            // old one stayed alive until it lost focus — repeated clicks piled up.
             if (_menuForm != null && !_menuForm.IsDisposed)
             {
                 try { _menuForm.Close(); } catch { }
                 _menuForm = null;
             }
 
-            MenuPanel panel = BuildMenu();
-            if (panel == null) return;
+            Point cursor = Cursor.Position;
+            float menuScale = ScaleAt(cursor);
+
+            MenuPanel panel = new MenuPanel(menuScale);
+            panel.RefreshSeconds = _refreshSeconds;
+            panel.Theme = ThemeManager.Mode;
+            panel.AutostartEnabled = Autostart.IsSupported();
+            panel.AutostartOn = Autostart.IsSupported() && Autostart.IsEnabled();
+
+            panel.QuitRequested += delegate { Application.Exit(); };
+
+            panel.AutostartToggled += delegate
+            {
+                Autostart.Set(panel.AutostartOn);
+            };
+
+            panel.RefreshSecondsChanged += delegate
+            {
+                _refreshSeconds = panel.RefreshSeconds;
+                SaveRefreshSeconds(_refreshSeconds);
+                ApplyInterval();
+            };
+
+            panel.ThemeChanged += delegate
+            {
+                // The panel already persisted the choice and repainted itself; the
+                // hover card and the menu chrome follow the same palette.
+                if (_tip != null && !_tip.IsDisposed) _tip.Invalidate();
+                if (_menuForm != null && !_menuForm.IsDisposed)
+                {
+                    _menuForm.BackColor = FluentTheme.P.BgTop;
+                    _menuForm.Invalidate(true);
+                }
+            };
 
             TrayMenuForm form = new TrayMenuForm();
             form.Panel = panel;
             form.ClientSize = panel.Size;
 
             panel.Dock = DockStyle.Fill;
-            panel.QuitRequested += delegate { Application.Exit(); };
-
-            panel.AutostartEnabled = Autostart.IsSupported();
-            panel.AutostartOn = Autostart.IsSupported() && Autostart.IsEnabled();
-
-            MenuPanel captured = panel;
-            panel.AutostartToggled += delegate { Autostart.Set(captured.AutostartOn); };
-
             form.Controls.Add(panel);
 
-            Point p = Cursor.Position;
+            Point p = cursor;
             Rectangle screen = Screen.FromPoint(p).WorkingArea;
 
             int x = p.X + 4;
@@ -179,88 +240,117 @@ namespace Voltide.UI
             panel.Focus();
         }
 
-        // ---------------------------------------------------------------- menu
-
-        /// <summary>
-        /// Rebuilt on every open so the list is never stale. Order matches the panel:
-        /// reporting a level, then awake-but-waiting, then asleep.
-        /// </summary>
-        private MenuPanel BuildMenu()
+        private void OnThemeChanged(object sender, EventArgs e)
         {
-            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero))
+            RedrawTray();
+            if (_tip != null && !_tip.IsDisposed) _tip.Invalidate();
+            if (_menuForm != null && !_menuForm.IsDisposed)
             {
-                float scale = g.DpiX / 96f;
-
-                // Sizes straight from the layered artboards: 20 px names and levels,
-                // 17 px Chinese, 9.76 px wordmark.
-                Font nameFont = FontManager.Get(FontKind.MontserratMedium, 20f * scale);
-                Font valueFont = FontManager.Get(FontKind.MontserratMedium, 20f * scale);
-                Font cnFont = FontManager.Get(FontKind.Chinese, 17f * scale);
-                Font markFont = FontManager.Get(FontKind.MontserratSemiBold, 9f * scale);
-
-                List<MenuRow> rows = new List<MenuRow>();
-
-                foreach (DeviceSnapshot s in OrderedForMenu())
-                {
-                    MenuRow row = new MenuRow();
-
-                    // The tray row is narrow, so devices may publish a shorter label
-                    // than the one the card uses.
-                    if (!string.IsNullOrEmpty(s.Info.ShortModel)) row.Name = s.Info.ShortModel;
-                    else if (!string.IsNullOrEmpty(s.Info.Model)) row.Name = s.Info.Model;
-                    else row.Name = s.Info.Brand;
-
-                    if (HasLevel(s))
-                    {
-                        row.Kind = MenuRowKind.Level;
-                        row.Percent = s.Reading.Percent.Value;
-                        row.Value = s.Reading.Percent.Value + "%";
-                    }
-                    else
-                    {
-                        row.Kind = MenuRowKind.Asleep;
-
-                        int? last = _form.LastPercent(s.Info.Id);
-                        if (last.HasValue)
-                        {
-                            // Still paired, just idle: show the last known level in grey
-                            // instead of a blank, same rule as the card.
-                            row.Percent = last.Value;
-                            row.Value = last.Value >= 100 ? "Full" : last.Value + "%";
-                            row.GreyValue = true;
-                        }
-                        else
-                        {
-                            row.Value = "休眠中";
-                        }
-                    }
-
-                    rows.Add(row);
-                }
-
-                return new MenuPanel(rows, scale, nameFont, valueFont, cnFont, markFont);
+                _menuForm.BackColor = FluentTheme.P.BgTop;
+                _menuForm.Invalidate(true);
             }
         }
-        private List<DeviceSnapshot> OrderedForMenu()
+
+        /// <summary>
+        /// The tray glyph is tinted from the system light/dark setting (that is what
+        /// the shell does), so a system theme flip has to redraw it even when the app
+        /// is pinned to one appearance.
+        /// </summary>
+        private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+        {
+            try
+            {
+                _marshal.BeginInvoke(new MethodInvoker(delegate
+                {
+                    RedrawTray();
+                    if (_tip != null && !_tip.IsDisposed) _tip.Invalidate();
+                    if (_menuForm != null && !_menuForm.IsDisposed) _menuForm.Invalidate(true);
+                }));
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>
+        /// A display swap, a resolution change or a scaling change can all move the
+        /// taskbar onto a display with a different DPI. Re-render the glyph at the new
+        /// slot size and rescale the hover card, otherwise the shell upscales a glyph
+        /// we drew for the old monitor.
+        /// </summary>
+        private void OnDisplaySettingsChanged(object sender, EventArgs e)
+        {
+            try
+            {
+                _marshal.BeginInvoke(new MethodInvoker(delegate
+                {
+                    int previous = _dpi;
+                    RefreshDpi();
+
+                    RedrawTray();
+
+                    if (_tip != null && !_tip.IsDisposed)
+                    {
+                        _tip.SetRows(BuildTipRows(), ScaleAt(_tipAnchor));
+                        if (_tip.Visible) PositionTip(_tipAnchor);
+                        _tip.Invalidate();
+                    }
+
+                    // The menu is already open at the old scale; closing beats
+                    // relaying it out under the pointer.
+                    if (previous != _dpi && _menuForm != null && !_menuForm.IsDisposed)
+                    {
+                        try { _menuForm.Close(); } catch { }
+                        _menuForm = null;
+                    }
+                }));
+            }
+            catch
+            {
+            }
+        }
+
+        /// <summary>Live readings first, then sleeping or unsupported devices.</summary>
+        private static List<DeviceSnapshot> Ordered(List<DeviceSnapshot> input)
         {
             List<DeviceSnapshot> live = new List<DeviceSnapshot>();
             List<DeviceSnapshot> asleep = new List<DeviceSnapshot>();
 
-            foreach (DeviceSnapshot s in _manager.Snapshot())
+            if (input != null)
             {
-                if (s.Reading == null) { asleep.Add(s); continue; }
+                foreach (DeviceSnapshot s in input)
+                {
+                    if (s.Reading == null) { asleep.Add(s); continue; }
 
-                if (s.Reading.Online && s.Reading.Percent.HasValue) live.Add(s);
-                else asleep.Add(s);
+                    if (s.Reading.Online && s.Reading.Percent.HasValue) live.Add(s);
+                    else asleep.Add(s);
+                }
             }
 
             live.AddRange(asleep);
             return live;
         }
 
-        private static bool HasLevel(DeviceSnapshot s)
+        private static string ShortLabel(DeviceSnapshot s)
         {
-            return s != null && s.Reading != null && s.Reading.Online && s.Reading.Percent.HasValue;
+            if (s == null) return "";
+            if (!string.IsNullOrEmpty(s.Info.ShortModel)) return s.Info.ShortModel;
+            if (!string.IsNullOrEmpty(s.Info.Model)) return s.Info.Model;
+            return s.Info.Brand;
+        }
+
+        private static int? LivePercent(DeviceSnapshot s)
+        {
+            if (s == null || s.Reading == null) return null;
+            if (!s.Reading.Online || !s.Reading.Percent.HasValue) return null;
+            return s.Reading.Percent.Value;
+        }
+
+        private int? LastPercent(string id)
+        {
+            int pct;
+            if (id != null && _lastPercent.TryGetValue(id, out pct)) return pct;
+            return null;
         }
 
         // ------------------------------------------------------------- refresh
@@ -270,8 +360,7 @@ namespace Voltide.UI
             if (_refreshing)
             {
                 // A read is already running. Queue one more instead of dropping the
-                // request — dropping it is what made a click on the refresh icon spin
-                // the arrow and change nothing at all.
+                // request — dropping it made a refresh appear to do nothing at all.
                 _refreshQueued = true;
                 return;
             }
@@ -293,9 +382,9 @@ namespace Voltide.UI
 
                 try
                 {
-                    _form.BeginInvoke(new MethodInvoker(delegate
+                    _marshal.BeginInvoke(new MethodInvoker(delegate
                     {
-                        _form.UpdateSnapshot(_manager.Snapshot());
+                        UpdateTray(_manager.Snapshot());
                     }));
                 }
                 catch
@@ -310,13 +399,215 @@ namespace Voltide.UI
             });
         }
 
-        public void ShowPanel()
+        // ------------------------------------------------------------ tray face
+
+        /// <summary>
+        /// Redraws the tray glyphs: one battery per device, at most two. A sleeping
+        /// device keeps its slot with its last known level so the count still tracks
+        /// the fleet.
+        /// </summary>
+        private void UpdateTray(List<DeviceSnapshot> snaps)
         {
-            _form.ShowPanel();
+            _snapshot = snaps ?? new List<DeviceSnapshot>();
+
+            foreach (DeviceSnapshot s in _snapshot)
+            {
+                int? live = LivePercent(s);
+                if (live.HasValue) _lastPercent[s.Info.Id] = live.Value;
+            }
+
+            RedrawTray();
+
+            if (_tip != null && !_tip.IsDisposed && _tip.Visible)
+            {
+                _tip.SetRows(BuildTipRows(), ScaleAt(_tipAnchor));
+                PositionTip(_tipAnchor);
+            }
+        }
+
+        private void RedrawTray()
+        {
+            List<DeviceSnapshot> ordered = Ordered(_snapshot);
+            int count = Math.Min(2, ordered.Count);
+
+            if (count <= 0)
+            {
+                SetTrayIcon(IconFactory.Render(Dpi.SmallIconSize(_dpi)));
+                return;
+            }
+
+            int?[] levels = new int?[count];
+            for (int i = 0; i < count; i++)
+            {
+                int? pct = LivePercent(ordered[i]);
+                if (!pct.HasValue) pct = LastPercent(ordered[i].Info.Id);
+                levels[i] = pct;
+            }
+
+            SetTrayIcon(IconFactory.RenderTray(Dpi.SmallIconSize(_dpi), levels));
+        }
+
+        private void SetTrayIcon(Bitmap bmp)
+        {
+            if (bmp == null) return;
+
+            using (bmp)
+            {
+                try
+                {
+                    Icon icon = IconFactory.ToIcon(bmp);
+                    Icon old = _trayIcon;
+                    _trayIcon = icon;
+                    _tray.Icon = icon;
+                    if (old != null) { try { old.Dispose(); } catch { } }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private List<TipRow> BuildTipRows()
+        {
+            List<TipRow> rows = new List<TipRow>();
+
+            foreach (DeviceSnapshot s in Ordered(_snapshot))
+            {
+                TipRow row = new TipRow();
+                row.Name = ShortLabel(s);
+                row.Channel = (s != null && s.Reading != null) ? FluentTheme.ChannelOf(s.Reading.Detail) : "";
+
+                int? pct = LivePercent(s);
+                if (pct.HasValue)
+                {
+                    row.Percent = pct.Value;
+                    row.Online = true;
+                }
+                else
+                {
+                    row.Percent = LastPercent(s.Info.Id);
+                    row.Online = false;
+                }
+
+                if (!row.Percent.HasValue) row.Value = "休眠";
+                else if (row.Percent.Value >= 100) row.Value = "Full";
+                else row.Value = row.Percent.Value + "%";
+
+                rows.Add(row);
+            }
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Re-reads the taskbar DPI. Called at startup and whenever Windows reports a
+        /// display or scaling change, so the glyph is always rendered at the pixel size
+        /// the shell is about to ask for instead of being resampled into it.
+        /// </summary>
+        private void RefreshDpi()
+        {
+            _dpi = Dpi.TrayDpi();
+            _dpiScale = Dpi.Scale(_dpi);
+        }
+
+        private static float ScaleAt(Point point)
+        {
+            return Dpi.Scale(Dpi.DpiAt(point));
+        }
+
+        /// <summary>
+        /// Cheap re-check on the paths that rebuild UI anyway. DisplaySettingsChanged
+        /// covers scaling changes, but dragging the taskbar to another monitor is not a
+        /// display setting change, so the glyph also re-syncs the next time the user
+        /// opens the menu or hovers the icon.
+        /// </summary>
+        private void SyncDpi()
+        {
+            int dpi = Dpi.TrayDpi();
+            if (dpi == _dpi) return;
+
+            _dpi = dpi;
+            _dpiScale = Dpi.Scale(dpi);
+            RedrawTray();
+        }
+
+        // ----------------------------------------------------------- hover card
+
+        private void ShowTip()
+        {
+            // A click or its popup already owns the interaction.
+            if (_menuForm != null && !_menuForm.IsDisposed) return;
+
+            SyncDpi();
+
+            if (_tip == null || _tip.IsDisposed)
+            {
+                _tip = new FluentTipForm();
+            }
+
+            _tip.SetRows(BuildTipRows(), ScaleAt(Cursor.Position));
+            _tipAnchor = Cursor.Position;
+            PositionTip(_tipAnchor);
+
+            try
+            {
+                _tip.Show();
+            }
+            catch
+            {
+                return;
+            }
+
+            _tipPoll.Start();
+        }
+
+        private void PositionTip(Point anchor)
+        {
+            if (_tip == null || _tip.IsDisposed) return;
+
+            Rectangle work = Screen.FromPoint(anchor).WorkingArea;
+            int x = anchor.X - _tip.Width / 2;
+            int y = work.Bottom - _tip.Height - 8;
+
+            if (x + _tip.Width > work.Right - 4) x = work.Right - _tip.Width - 4;
+            if (x < work.Left + 4) x = work.Left + 4;
+            if (y < work.Top + 4) y = work.Top + 4;
+
+            _tip.Location = new Point(x, y);
+        }
+
+        private void PollTip(object sender, EventArgs e)
+        {
+            if (_tip == null || _tip.IsDisposed || !_tip.Visible)
+            {
+                _tipPoll.Stop();
+                return;
+            }
+
+            Point c = Cursor.Position;
+            Screen screen = Screen.FromPoint(c);
+
+            bool inTip = _tip.Bounds.Contains(c);
+            bool nearTray = c.Y >= screen.WorkingArea.Bottom - 6 &&
+                            Math.Abs(c.X - _tipAnchor.X) <= 150;
+
+            if (!inTip && !nearTray) HideTip();
+        }
+
+        private void HideTip()
+        {
+            _hoverDelay.Stop();
+            _tipPoll.Stop();
+
+            if (_tip != null && !_tip.IsDisposed && _tip.Visible) _tip.Hide();
         }
 
         public void Dispose()
         {
+            ThemeManager.Changed -= OnThemeChanged;
+            SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+            SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+
             // The popup is a separate top-level window: closing the tray app must not
             // leave it on screen.
             if (_menuForm != null && !_menuForm.IsDisposed)
@@ -325,10 +616,37 @@ namespace Voltide.UI
                 _menuForm = null;
             }
 
+            HideTip();
+
+            if (_tip != null && !_tip.IsDisposed)
+            {
+                try { _tip.Close(); } catch { }
+                try { _tip.Dispose(); } catch { }
+                _tip = null;
+            }
+
+            if (_hoverDelay != null)
+            {
+                _hoverDelay.Stop();
+                _hoverDelay.Dispose();
+            }
+
+            if (_tipPoll != null)
+            {
+                _tipPoll.Stop();
+                _tipPoll.Dispose();
+            }
+
             if (_timer != null)
             {
                 _timer.Stop();
                 _timer.Dispose();
+            }
+
+            if (_trayIcon != null)
+            {
+                try { _trayIcon.Dispose(); } catch { }
+                _trayIcon = null;
             }
 
             if (_tray != null)
@@ -337,6 +655,7 @@ namespace Voltide.UI
                 _tray.Dispose();
             }
 
+            if (_marshal != null) _marshal.Dispose();
         }
     }
 }

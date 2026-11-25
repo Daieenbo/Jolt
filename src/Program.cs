@@ -11,12 +11,21 @@ namespace Voltide
 {
     public static class Program
     {
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+
         [DllImport("user32.dll")]
         private static extern bool SetProcessDPIAware();
 
+        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 / _PER_MONITOR_AWARE. V2 tells the
+        // shell (and WinForms) that we handle WM_DPICHANGED ourselves, which is the only
+        // way a tray HICON can stay sharp when the taskbar sits on a 150 % display.
+        private static readonly IntPtr PerMonitorAwareV2 = new IntPtr(-4);
+        private static readonly IntPtr PerMonitorAware = new IntPtr(-3);
+
         /// <summary>
         /// Entry point usable from an in-memory compiled assembly
-        /// (Add-Type ... then [Voltide.Program]::Run(@('--show'))).
+        /// (Add-Type ... then [Voltide.Program]::Run(@())).
         /// </summary>
         public static void Run(string[] args)
         {
@@ -34,24 +43,15 @@ namespace Voltide
                     return;
                 }
 
-                bool autoShow = false;
-                if (args != null)
-                {
-                    for (int i = 0; i < args.Length; i++)
-                    {
-                        if (args[i] == "--show") autoShow = true;
-                    }
-                }
-
                 bool createdNew;
-                using (Mutex mutex = new Mutex(true, "Voltide-SingleInstance", out createdNew))
+                using (Mutex mutex = new Mutex(true, "Jolt-SingleInstance", out createdNew))
                 {
                     if (!createdNew)
                     {
                         return;
                     }
 
-                    SetProcessDPIAware();
+                    EnableDpiAwareness();
                     Application.EnableVisualStyles();
                     Application.SetCompatibleTextRenderingDefault(false);
 
@@ -67,7 +67,6 @@ namespace Voltide
 
                     using (TrayApp app = new TrayApp())
                     {
-                        if (autoShow) app.ShowPanel();
                         Application.Run();
                     }
                 }
@@ -79,11 +78,40 @@ namespace Voltide
             }
         }
 
+        /// <summary>
+        /// Per-Monitor V2 first, then plain Per-Monitor, then the old system-wide flag.
+        /// Each step needs a newer OS than the previous one, and every step must run
+        /// before the first window exists or Windows ignores it.
+        /// </summary>
+        private static void EnableDpiAwareness()
+        {
+            try
+            {
+                if (SetProcessDpiAwarenessContext(PerMonitorAwareV2)) return;
+            }
+            catch (EntryPointNotFoundException) { }
+            catch (DllNotFoundException) { }
+
+            try
+            {
+                if (SetProcessDpiAwarenessContext(PerMonitorAware)) return;
+            }
+            catch (EntryPointNotFoundException) { }
+            catch (DllNotFoundException) { }
+
+            try
+            {
+                SetProcessDPIAware();
+            }
+            catch (EntryPointNotFoundException) { }
+            catch (DllNotFoundException) { }
+        }
+
         private static void Log(string msg)
         {
             try
             {
-                string path = Path.Combine(Path.GetTempPath(), "Voltide-error.txt");
+                string path = Path.Combine(Path.GetTempPath(), "Jolt-error.txt");
                 File.AppendAllText(path, DateTime.Now.ToString("HH:mm:ss") + "  " + msg + Environment.NewLine);
             }
             catch

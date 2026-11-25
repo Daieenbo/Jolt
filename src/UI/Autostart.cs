@@ -14,10 +14,10 @@ namespace Voltide.UI
     internal static class Autostart
     {
         private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-        private const string ValueName = "Voltide";
+        private const string ValueName = "Jolt";
 
         /// <summary>
-        /// False when the current process is not Voltide.exe — the in-memory build
+        /// False when the current process is not Jolt.exe — the in-memory build
         /// (run.cmd) runs under powershell.exe, and writing that path would launch a
         /// PowerShell window at every boot instead of the app.
         /// </summary>
@@ -26,7 +26,7 @@ namespace Voltide.UI
             try
             {
                 string exe = Application.ExecutablePath;
-                return exe.EndsWith("Voltide.exe", StringComparison.OrdinalIgnoreCase);
+                return exe.EndsWith("Jolt.exe", StringComparison.OrdinalIgnoreCase);
             }
             catch
             {

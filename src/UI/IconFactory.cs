@@ -110,6 +110,83 @@ namespace Voltide.UI
             }
         }
 
+        /// <summary>Wraps an already rendered bitmap as an HICON.</summary>
+        public static Icon ToIcon(Bitmap bmp)
+        {
+            IntPtr handle = bmp.GetHicon();
+            Icon icon = (Icon)Icon.FromHandle(handle).Clone();
+            DestroyIcon(handle);
+            return icon;
+        }
+
+        /// <summary>
+        /// Draw up to two stacked battery levels, or the logo when no devices are present.
+        /// </summary>
+        public static Bitmap RenderTray(int size, int?[] levels)
+        {
+            return RenderTray(size, levels, LightTaskbar());
+        }
+
+        /// <summary>
+        /// Same glyph with an explicit taskbar tint, so the preview fixtures can show
+        /// both light and dark shells from one build.
+        /// </summary>
+        internal static Bitmap RenderTray(int size, int?[] levels, bool light)
+        {
+            int count = levels == null ? 0 : Math.Min(2, levels.Length);
+            if (count <= 0) return Render(size);
+
+            if (size < 8) size = 8;
+
+            Bitmap bmp = new Bitmap(size, size, PixelFormat.Format32bppPArgb);
+
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.Half;
+                g.Clear(Color.Transparent);
+
+                float unit = size / 16f;
+                int nubW = Math.Max(1, (int)Math.Round(1.5f * unit));
+                int bodyW = size - nubW;
+                int gap = Math.Max(1, (int)Math.Round(unit));
+                int cellH = count == 1 ? (int)Math.Round(9f * unit) : (size - gap) / 2;
+                int blockH = count * cellH + (count - 1) * gap;
+                int y = (size - blockH) / 2;
+
+                for (int i = 0; i < count; i++)
+                {
+                    FluentTheme.DrawTrayBattery(g, new Rectangle(0, y, bodyW, cellH),
+                                                nubW, levels[i], light);
+                    y += cellH + gap;
+                }
+            }
+
+            return bmp;
+        }
+
+        /// <summary>
+        /// Windows decides the taskbar/tray tint from the system light theme, not the
+        /// app theme, so the glyph has to follow that toggle instead.
+        /// </summary>
+        private static bool LightTaskbar()
+        {
+            try
+            {
+                using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", false))
+                {
+                    if (key == null) return false;
+                    object raw = key.GetValue("SystemUsesLightTheme");
+                    return raw != null && Convert.ToInt32(raw) != 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>
         /// Writes a Windows .ico containing one PNG entry per size. PNG entries are
         /// what Vista and later prefer; a single-size icon would be resampled by
